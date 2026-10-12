@@ -1,0 +1,70 @@
+diff --git a/integration_test/base/base_scenario.dart b/integration_test/base/base_scenario.dart
+index 1784fd6b7..b9b02afab 100644
+--- a/integration_test/base/base_scenario.dart
++++ b/integration_test/base/base_scenario.dart
+@@ -9,0 +10,6 @@ abstract class BaseScenario {
++  /// Runs after app dependencies are initialized but before the app starts.
++  ///
++  /// Scenarios can use this hook to prepare state that startup reads, without
++  /// racing the first frame.
++  Future<void> prepare() async {}
++
+@@ -23 +29 @@ abstract class BaseScenario {
+-}
+\ No newline at end of file
++}
+diff --git a/integration_test/base/base_test_scenario.dart b/integration_test/base/base_test_scenario.dart
+index 9be3eace4..3b522ca05 100644
+--- a/integration_test/base/base_test_scenario.dart
++++ b/integration_test/base/base_test_scenario.dart
+@@ -18,3 +18,4 @@ abstract class BaseTestScenario extends BaseScenario with ScenarioUtilsMixin {
+-  // Seeds credentials directly into app storage so HomeController skips login.
+-  // Tests run in the same process as the app, so Get.find<> works here.
+-  Future<void> _seedTestCredentials() async {
++  // Seed credentials before app startup so HomeController sees them on its
++  // first read. MainBindings has registered these repositories by prepare().
++  @override
++  Future<void> prepare() async {
+@@ -42 +42,0 @@ abstract class BaseTestScenario extends BaseScenario with ScenarioUtilsMixin {
+-    await _seedTestCredentials();
+diff --git a/integration_test/base/test_base.dart b/integration_test/base/test_base.dart
+index 6fffce9ab..e49566ac2 100644
+--- a/integration_test/base/test_base.dart
++++ b/integration_test/base/test_base.dart
+@@ -3,0 +4 @@ import 'package:flutter/foundation.dart';
++import 'package:flutter/widgets.dart';
+@@ -6 +7,2 @@ import 'package:patrol/patrol.dart';
+-import 'package:tmail_ui_user/main/main_entry.dart';
++import 'package:tmail_ui_user/main.dart';
++import 'package:tmail_ui_user/main/main_entry.dart' show runTmailPreload;
+@@ -44,2 +46,4 @@ class TestBase {
+-        await setupTest();
+-        await scenarioBuilder($, createRobotFactory($)).execute();
++        final scenario = await setupTest(
++          () => scenarioBuilder($, createRobotFactory($)),
++        );
++        await scenario.execute();
+@@ -50 +54 @@ class TestBase {
+-  Future<void> setupTest() async {
++  Future<BaseScenario> setupTest(BaseScenario Function() buildScenario) async {
+@@ -52 +56,4 @@ class TestBase {
+-    await runTmail();
++    await runTmailPreload();
++    final scenario = buildScenario();
++    await scenario.prepare();
++    runApp(const TMailApp());
+@@ -57,0 +65,2 @@ class TestBase {
++
++    return scenario;
+@@ -68 +77 @@ class TestBase {
+-}
+\ No newline at end of file
++}
+diff --git a/integration_test/scenarios/login_with_basic_auth_scenario.dart b/integration_test/scenarios/login_with_basic_auth_scenario.dart
+index 7ae25f0ca..d79f90bce 100644
+--- a/integration_test/scenarios/login_with_basic_auth_scenario.dart
++++ b/integration_test/scenarios/login_with_basic_auth_scenario.dart
+@@ -21,0 +22,3 @@ class LoginWithBasicAuthScenario extends BaseTestScenario {
++  @override
++  Future<void> prepare() async {}
++
