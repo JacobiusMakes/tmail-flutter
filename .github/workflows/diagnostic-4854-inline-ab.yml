@@ -1,0 +1,81 @@
+name: Diagnostic PR 4854 inline image draft A/B
+
+on:
+  push:
+    branches:
+      - diagnostic/4854-inline-image-ab
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: base-inline-image-draft
+            sha: 2e1999b48dc16f9d9411bb0d038b9edd9964cca6
+            apply_harness_patch: false
+          - label: fixed-inline-image-draft
+            sha: 6d4b3bef260b338a372f6a70f3e2b7ddb73f6101
+            apply_harness_patch: true
+    name: ${{ matrix.label }}
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          repository: JacobiusMakes/tmail-flutter
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.9
+          channel: stable
+          cache: true
+
+      - name: Pin shared backend digest
+        env:
+          BACKEND_IMAGE: docker.io/linagora/tmail-backend@sha256:1d163783c6480563dc1c8978a40b6a4a96f872ff2f8423c5a012dbb43fa32bed
+        shell: bash
+        run: |
+          docker pull "$BACKEND_IMAGE"
+          docker tag "$BACKEND_IMAGE" linagora/tmail-backend:memory-1.0.18-patch2
+          printf 'Source SHA: %s\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Backend digest: %s\n' "$BACKEND_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply test-harness preparation patch (third arm only)
+        if: matrix.apply_harness_patch
+        shell: bash
+        run: |
+          git fetch --depth=1 origin "$GITHUB_SHA"
+          git show "$GITHUB_SHA:diagnostics/4854-harness-order.patch" > "$RUNNER_TEMP/harness-order.patch"
+          git apply --unidiff-zero --check "$RUNNER_TEMP/harness-order.patch"
+          git apply --unidiff-zero "$RUNNER_TEMP/harness-order.patch"
+
+      - name: Prebuild (same as upstream)
+        run: ./scripts/prebuild.sh
+
+      - name: Run only the inline-image draft test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          source = Path('scripts/patrol-web-integration-test-with-docker.sh').read_text()
+          slash = chr(92)
+          needle = 'patrol test -v ' + slash + '\n'
+          target = '    --target=integration_test/tests/composer/save_draft_with_inline_image_then_open_and_save_draft_again_test.dart ' + slash + '\n'
+          if source.count(needle) != 1:
+              raise SystemExit('Expected upstream Patrol command exactly once; refusing to run an unfiltered suite')
+          destination = Path(os.environ['RUNNER_TEMP']) / 'patrol-web-single-test.sh'
+          destination.write_text(source.replace(needle, needle + target, 1))
+          destination.chmod(0o755)
+          print('Target: integration_test/tests/composer/save_draft_with_inline_image_then_open_and_save_draft_again_test.dart')
+          PY
+          "$RUNNER_TEMP/patrol-web-single-test.sh"
